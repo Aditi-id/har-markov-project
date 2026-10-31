@@ -1,0 +1,31 @@
+<!doctype html><html><body style="font-family:sans-serif;margin:0">
+<button id="btn" style="padding:10px 18px;font-size:16px;border-radius:8px;border:1px solid #888;cursor:pointer">▶ Start phone sensors</button>
+<span id="st" style="margin-left:10px;font-size:14px">idle</span>
+<script>
+const send = (t, o) => window.parent.postMessage(Object.assign({isStreamlitMessage: true, type: t}, o), "*");
+send("streamlit:componentReady", {apiVersion: 1}); send("streamlit:setFrameHeight", {height: 56});
+const G = 9.80665, D = Math.PI / 180, $ = id => document.getElementById(id);
+let last = null, ring = [], total = 0, ev = 0, run = false, session = "", t0 = 0, tm = null, tf = null;
+function onMotion(e) {
+  const a = e.accelerationIncludingGravity, r = e.rotationRate;
+  if (!a || a.x == null) return; ev++;
+  last = [a.x / G, a.y / G, a.z / G, (r && r.alpha || 0) * D, (r && r.beta || 0) * D, (r && r.gamma || 0) * D];
+}
+async function start() {
+  if (typeof DeviceMotionEvent !== "undefined" && DeviceMotionEvent.requestPermission) {
+    try { if ((await DeviceMotionEvent.requestPermission()) !== "granted") { $("st").textContent = "Motion permission denied"; return; } }
+    catch (e) { $("st").textContent = "Permission error (needs HTTPS)"; return; }
+  }
+  window.addEventListener("devicemotion", onMotion);
+  run = true; ring = []; total = 0; ev = 0; last = null; session = Math.random().toString(36).slice(2); t0 = performance.now();
+  tm = setInterval(() => { if (last) { ring.push(last); if (ring.length > 250) ring.shift(); total++; } }, 20);   // fixed 50 Hz clock
+  tf = setInterval(() => {
+    const rate = ev / Math.max((performance.now() - t0) / 1000, .001);
+    send("streamlit:setComponentValue", {dataType: "json", value: {session, i0: total - ring.length, rate: Math.round(rate), samples: ring}});
+    $("st").textContent = last ? "Streaming — sensor " + Math.round(rate) + " Hz" : "No motion data yet (HTTPS needed? phone only)";
+  }, 1000);
+  $("btn").textContent = "■ Stop";
+}
+function stop() { run = false; clearInterval(tm); clearInterval(tf); window.removeEventListener("devicemotion", onMotion); $("btn").textContent = "▶ Start phone sensors"; $("st").textContent = "stopped"; }
+$("btn").addEventListener("click", () => run ? stop() : start());
+</script></body></html>
